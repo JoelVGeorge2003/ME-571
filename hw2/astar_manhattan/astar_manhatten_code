@@ -1,0 +1,234 @@
+import sys
+from PIL import Image
+import queue as Queue
+import matplotlib.pyplot as plt
+
+# Global variables
+start = (0, 0)
+end = (0, 0)
+difficulty = ""
+G = -1
+
+path = []
+expanded = {}
+frontier = {}
+
+open_set = Queue.PriorityQueue()
+came_from = {}
+cost_so_far = {}
+
+# Colors
+NEON_GREEN = (0, 255, 0)      # start / goal
+RED = (255, 0, 0)             # final path
+LIGHT_GRAY = (180, 180, 180)  # frontier
+DARK_GRAY = (90, 90, 90)      # expanded / visited nodes
+
+
+def reset_search_state():
+    global path, expanded, frontier, open_set, came_from, cost_so_far, G
+    path = []
+    expanded = {}
+    frontier = {}
+    open_set = Queue.PriorityQueue()
+    came_from = {}
+    cost_so_far = {}
+    G = -1
+
+
+def heuristic(node, goal):
+    
+    x1, y1 = node
+    x2, y2 = goal
+    return abs(x1 - x2) + abs(y1 - y2)
+
+
+def valid_neighbor(pixel_map, x, y, width, height):
+    
+    if x < 0 or x >= width or y < 0 or y >= height:
+        return False
+    if pixel_map[x, y] == 0:
+        return False
+    return True
+
+
+def reconstruct_path():
+    global path
+
+    path = []
+    if end not in came_from:
+        return
+
+    current = end
+    while current is not None:
+        path.append(current)
+        current = came_from[current]
+    path.reverse()
+
+
+def search(pixel_map, width, height):
+    
+    global G
+
+    directions = [(1, 0), (-1, 0), (0, 1), (0, -1)]
+
+    open_set.put((0, start))
+    came_from[start] = None
+    cost_so_far[start] = 0
+    frontier[start] = True
+
+    while not open_set.empty():
+        current_priority, current = open_set.get()
+
+        if current in expanded:
+            continue
+
+        expanded[current] = True
+
+        if current in frontier:
+            del frontier[current]
+
+        if current == end:
+            G = cost_so_far[current]
+            reconstruct_path()
+            return
+
+        for dx, dy in directions:
+            nx = current[0] + dx
+            ny = current[1] + dy
+            neighbor = (nx, ny)
+
+            if not valid_neighbor(pixel_map, nx, ny, width, height):
+                continue
+
+            new_cost = cost_so_far[current] + 1
+
+            if neighbor not in cost_so_far or new_cost < cost_so_far[neighbor]:
+                cost_so_far[neighbor] = new_cost
+                came_from[neighbor] = current
+
+                priority = new_cost + heuristic(neighbor, end)
+                open_set.put((priority, neighbor))
+
+                if neighbor not in expanded:
+                    frontier[neighbor] = True
+
+    # no path found
+    G = -1
+    reconstruct_path()
+
+
+def draw_thick_pixel(px, x, y, width, height, color, thickness=1):
+    for dx in range(-thickness, thickness + 1):
+        for dy in range(-thickness, thickness + 1):
+            xx = x + dx
+            yy = y + dy
+            if 0 <= xx < width and 0 <= yy < height:
+                px[xx, yy] = color
+
+
+def visualize_search(save_file="astar_manhattan.png"):
+    
+    im = Image.open(difficulty).convert("RGB")
+    px = im.load()
+    width, height = im.size
+
+    # expanded first
+    for p in expanded.keys():
+        px[p[0], p[1]] = DARK_GRAY
+
+    # frontier next
+    for p in frontier.keys():
+        px[p[0], p[1]] = LIGHT_GRAY
+
+    # thick red final path
+    for p in path:
+        draw_thick_pixel(px, p[0], p[1], width, height, RED, thickness=1)
+
+    # thick start and goal
+    draw_thick_pixel(px, start[0], start[1], width, height, NEON_GREEN, thickness=2)
+    draw_thick_pixel(px, end[0], end[1], width, height, NEON_GREEN, thickness=2)
+
+    im.save(save_file)
+
+    plt.figure(figsize=(12, 8))
+    plt.imshow(im)
+    plt.title("A* Search Result - Manhattan Heuristic")
+    plt.text(start[0] + 5, start[1] + 5, "START", color="lime", fontsize=10)
+    plt.text(end[0] + 5, end[1] + 5, "GOAL", color="lime", fontsize=10)
+    plt.xlabel("Final path cost = {0}, Expanded nodes = {1}, Path nodes = {2}".format(
+        G, len(expanded), len(path)
+    ))
+    plt.ylabel("Maze Y")
+    plt.tight_layout()
+    plt.savefig("labeled_" + save_file)
+    plt.show()
+
+    im.close()
+
+
+def set_start_end(difficulty_name):
+    global start, end
+
+    if difficulty_name == "trivial.gif" or difficulty_name == "maps/trivial.gif":
+        start = (8, 1)
+        end = (20, 1)
+
+    elif difficulty_name == "medium.gif" or difficulty_name == "maps/medium.gif":
+        start = (8, 201)
+        end = (110, 1)
+
+    elif difficulty_name == "hard.gif" or difficulty_name == "maps/hard.gif":
+        start = (10, 1)
+        end = (401, 220)
+
+    elif difficulty_name == "super_hard.gif" or difficulty_name == "maps/super_hard.gif":
+        start = (10, 1)
+        end = (401, 220)
+
+    elif difficulty_name == "very_hard.gif" or difficulty_name == "maps/very_hard.gif":
+        start = (1, 324)
+        end = (580, 1)
+
+    elif difficulty_name == "my_maze.gif" or difficulty_name == "maps/my_maze.gif":
+        start = (0, 0)
+        end = (500, 205)
+
+    elif difficulty_name == "my_maze2.gif" or difficulty_name == "maps/my_maze2.gif":
+        start = (0, 0)
+        end = (599, 350)
+
+    else:
+        raise AssertionError("Incorrect difficulty level provided")
+
+
+if __name__ == "__main__":
+    if len(sys.argv) != 2:
+        print("Usage: python3 read_map.py <maze_file>")
+        sys.exit(1)
+
+    difficulty = str(sys.argv[1])
+    print("Running A* Manhattan with:", difficulty)
+
+    set_start_end(difficulty)
+    reset_search_state()
+
+    im = Image.open(difficulty).convert("1")
+    pixel_map = im.load()
+    width, height = im.size
+
+    search(pixel_map, width, height)
+
+    print("A* Manhattan completed")
+    print("Start node:", start)
+    print("Goal node:", end)
+    print("Final path cost:", G)
+    print("Expanded nodes:", len(expanded))
+    print("Path length:", len(path))
+    if G == -1:
+        print("No path found")
+    else:
+        print("Path found successfully")
+    print("Saved image: astar_manhattan.png")
+    print("Saved labeled image: labeled_astar_manhattan.png")
+
+    visualize_search("astar_manhattan.png")
